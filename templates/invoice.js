@@ -15,10 +15,13 @@ function formatMoney(n) {
   return num.toLocaleString("fr-FR").replace(/\u202f/g, " ");
 }
 
+const PAGE_WIDTH = 1080;
+const PAGE_HEIGHT = 1350;
+
 /**
  * data = {
  *   docType: "devis" | "facture",
- *   number: "0006",
+ *   number: "25010001",
  *   date: "20/09/2026",
  *   client: { name, address, phone },
  *   items: [{ description, unitPrice, quantity }],
@@ -58,12 +61,25 @@ function renderInvoiceHtml(data) {
 <meta charset="UTF-8" />
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: ${PAGE_WIDTH}px; }
   body {
     font-family: 'Helvetica Neue', Arial, sans-serif;
     color: #1a2140;
-    width: 1080px;
     background: #ffffff;
   }
+
+  /* Cadre de taille FIXE : le footer reste toujours ancre en bas,
+     quel que soit le volume de contenu au-dessus (dans la limite raisonnable). */
+  .page {
+    width: ${PAGE_WIDTH}px;
+    height: ${PAGE_HEIGHT}px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .page-content { flex: 1 0 auto; }
+  .footer { flex: 0 0 auto; }
+
   .header {
     position: relative;
     background: #2a2f66;
@@ -114,7 +130,6 @@ function renderInvoiceHtml(data) {
     font-size: 16px;
     padding: 14px 18px;
   }
-  thead tr { }
   thead td:first-child { border-radius: 999px 0 0 999px; border-right: none; }
   thead td:last-child { border-radius: 0 999px 999px 0; border-left: none; }
   thead td:not(:first-child):not(:last-child) { border-left: none; border-right: none; }
@@ -167,7 +182,6 @@ function renderInvoiceHtml(data) {
   .sig-box .date-line { margin-bottom: 60px; }
 
   .footer {
-    margin-top: 50px;
     padding: 18px 56px;
     text-align: center;
     font-size: 13px;
@@ -177,81 +191,85 @@ function renderInvoiceHtml(data) {
 </style>
 </head>
 <body>
-  <div class="header">
-    <svg class="wave" viewBox="0 0 1080 90" preserveAspectRatio="none" height="90">
-      <path d="M0,40 C 250,90 750,0 1080,55 L1080,90 L0,90 Z" fill="#c81e3b"/>
-      <path d="M0,55 C 250,100 750,15 1080,68 L1080,90 L0,90 Z" fill="#ffffff"/>
-    </svg>
-    <div class="doc-title">${docLabel} n\u00b0 ${escapeHtml(data.number)}</div>
-    <img class="logo" src="${company.logoDataUri}" />
-  </div>
-
-  <div class="info-row">
-    <div class="client-block">
-      <div class="client-label">Client: <span>${escapeHtml(data.client?.name || "")}</span></div>
-      <p>${escapeHtml(data.client?.address || "")}</p>
-      <p>${escapeHtml(data.client?.phone || "")}</p>
-    </div>
-    <div class="company-block">
-      <p>${escapeHtml(company.address)}</p>
-      <p>${escapeHtml(company.phone)}</p>
-      <p>${escapeHtml(company.email)}</p>
-    </div>
-  </div>
-
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <td>Description</td>
-          <td class="num">Prix unitaire</td>
-          <td class="num">Quantit\u00e9</td>
-          <td class="num">Total HT</td>
-        </tr>
-      </thead>
-      <tbody>
-        ${rows}
-      </tbody>
-    </table>
-  </div>
-
-  <div class="summary">
-    <table>
-      <tr><td>total</td><td>${formatMoney(totalHT)}</td></tr>
-      <tr><td>TVA (${tvaRate}%)</td><td>${formatMoney(tvaAmount)}</td></tr>
-    </table>
-  </div>
-
-  <div class="total-bar">
-    <span>Total</span>
-    <span>${formatMoney(totalTTC)}</span>
-  </div>
-
-  <div class="bottom-row">
-    <div class="payment-block">
-      <div class="section">
-        <h3>Informations de paiement</h3>
-        <p>Paiement par virement bancaire</p>
-        <p>Compte : ${escapeHtml(company.paymentBankAccount)}</p>
-        <p style="margin-top:8px;">Paiement par Orange Money</p>
-        <p>${escapeHtml(company.paymentOrangeMoney)}</p>
+  <div class="page">
+    <div class="page-content">
+      <div class="header">
+        <svg class="wave" viewBox="0 0 1080 90" preserveAspectRatio="none" height="90">
+          <path d="M0,40 C 250,90 750,0 1080,55 L1080,90 L0,90 Z" fill="#c81e3b"/>
+          <path d="M0,55 C 250,100 750,15 1080,68 L1080,90 L0,90 Z" fill="#ffffff"/>
+        </svg>
+        <div class="doc-title">${docLabel} n\u00b0 ${escapeHtml(data.number)}</div>
+        <img class="logo" src="${company.logoDataUri}" />
       </div>
-      <div class="section">
-        <h3>Termes &amp; conditions</h3>
-        <p>${escapeHtml(company.termsAndConditions)}</p>
+
+      <div class="info-row">
+        <div class="client-block">
+          <div class="client-label">Client: <span>${escapeHtml(data.client?.name || "")}</span></div>
+          <p>${escapeHtml(data.client?.address || "")}</p>
+          <p>${escapeHtml(data.client?.phone || "")}</p>
+        </div>
+        <div class="company-block">
+          <p>${escapeHtml(company.address)}</p>
+          <p>${escapeHtml(company.phone)}</p>
+          <p>${escapeHtml(company.email)}</p>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <td>Description</td>
+              <td class="num">Prix unitaire</td>
+              <td class="num">Quantit\u00e9</td>
+              <td class="num">Total HT</td>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="summary">
+        <table>
+          <tr><td>total</td><td>${formatMoney(totalHT)}</td></tr>
+          <tr><td>TVA (${tvaRate}%)</td><td>${formatMoney(tvaAmount)}</td></tr>
+        </table>
+      </div>
+
+      <div class="total-bar">
+        <span>Total</span>
+        <span>${formatMoney(totalTTC)}</span>
+      </div>
+
+      <div class="bottom-row">
+        <div class="payment-block">
+          <div class="section">
+            <h3>Informations de paiement</h3>
+            <p>Paiement par virement bancaire</p>
+            <p>Compte : ${escapeHtml(company.paymentBankAccount)}</p>
+            <p style="margin-top:8px;">Paiement par Orange Money</p>
+            <p>${escapeHtml(company.paymentOrangeMoney)}</p>
+          </div>
+          <div class="section">
+            <h3>Termes &amp; conditions</h3>
+            <p>${escapeHtml(company.termsAndConditions)}</p>
+          </div>
+        </div>
+        <div class="sig-box">
+          <div class="date-line">Date: ${escapeHtml(data.date || "")}</div>
+          <div>Signature:</div>
+        </div>
       </div>
     </div>
-    <div class="sig-box">
-      <div class="date-line">Date: ${escapeHtml(data.date || "")}</div>
-      <div>Signature:</div>
-    </div>
-  </div>
 
-  <div class="footer">
-    RCCM : ${escapeHtml(company.rccm)} | IFU : ${escapeHtml(company.ifu)} | N\u00b0 S\u00e9curit\u00e9 sociale : ${escapeHtml(company.socialSecurity)}
+    <div class="footer">
+      RCCM : ${escapeHtml(company.rccm)} | IFU : ${escapeHtml(company.ifu)} | N\u00b0 S\u00e9curit\u00e9 sociale : ${escapeHtml(company.socialSecurity)}
+    </div>
   </div>
 </body>
 </html>`;
 }
 
-module.exports = { renderInvoiceHtml };
+module.exports = { renderInvoiceHtml, PAGE_WIDTH, PAGE_HEIGHT };
