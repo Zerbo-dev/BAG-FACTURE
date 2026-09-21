@@ -174,12 +174,21 @@ function renderInvoiceHtml(data) {
     border: 2px solid #c81e3b;
     border-radius: 14px;
     width: 340px;
-    min-height: 160px;
+    min-height: 220px;
     padding: 20px 24px;
     font-size: 15px;
     font-weight: 600;
+    position: relative;
   }
-  .sig-box .date-line { margin-bottom: 60px; }
+  .sig-box .date-line { margin-bottom: 30px; }
+  .signature-img {
+    position: absolute;
+    right: 10px;
+    bottom: 20px;
+    width: 220px;
+    height: auto;
+    pointer-events: none;
+  }
 
   .footer {
     padding: 18px 56px;
@@ -260,6 +269,7 @@ function renderInvoiceHtml(data) {
         <div class="sig-box">
           <div class="date-line">Date: ${escapeHtml(data.date || "")}</div>
           <div>Signature:</div>
+          <img class="signature-img" src="${company.signatureDataUri}" />
         </div>
       </div>
     </div>
