@@ -25,13 +25,36 @@ function docLabelFor(docType) {
 }
 
 /**
+ * Sur une facture, le mode de paiement est choisi par l'utilisateur a la
+ * generation, donc on n'affiche que ce mode-la. Sur devis/proforma (rien
+ * n'est encore decide), on affiche les deux options possibles.
+ */
+function paymentInfoHtml(data) {
+  if (data.docType === "facture" && data.paymentMode) {
+    if (data.paymentMode === "Virement bancaire") {
+      return `<p>Paiement par virement bancaire</p>
+              <p>Compte : ${escapeHtml(company.paymentBankAccount)}</p>`;
+    }
+    if (data.paymentMode === "Orange Money") {
+      return `<p>Paiement par Orange Money</p>
+              <p>${escapeHtml(company.paymentOrangeMoney)}</p>`;
+    }
+    return `<p>Paiement en esp\u00e8ces</p>`;
+  }
+  return `<p>Paiement par virement bancaire</p>
+          <p>Compte : ${escapeHtml(company.paymentBankAccount)}</p>
+          <p style="margin-top:8px;">Paiement par Orange Money</p>
+          <p>${escapeHtml(company.paymentOrangeMoney)}</p>`;
+}
+
+/**
  * data = {
  *   docType: "devis" | "facture" | "proforma",
  *   number: "0000001-09/26",
  *   date: "20/09/2026",
- *   echeance: "20/10/2026",            // uniquement pour les proforma
- *   termsAndConditions: "...",         // saisi par l'utilisateur, devis/proforma seulement
- *   garantie: "...",                   // saisi par l'utilisateur, devis/proforma seulement
+ *   paymentMode: "Virement bancaire" | "Orange Money" | "Espèces", // facture seulement
+ *   termsAndConditions: "...",   // saisi par l'utilisateur, tous types
+ *   garantie: "...",             // saisi par l'utilisateur, tous types
  *   client: { name, address, phone },
  *   items: [{ description, unitPrice, quantity }],
  *   tvaRate: 0
@@ -64,12 +87,8 @@ function renderInvoiceHtml(data) {
   const tvaAmount = Math.round(totalHT * (tvaRate / 100));
   const totalTTC = totalHT + tvaAmount;
 
-  // Termes, garantie et echeance sont desormais saisis par l'utilisateur a
-  // la generation (plus de texte fixe depuis company.js) ; ils ne
-  // s'affichent que si renseignes, et jamais sur une facture.
-  const showTerms = data.docType !== "facture" && data.termsAndConditions;
-  const showGarantie = data.docType !== "facture" && data.garantie;
-  const showEcheance = data.docType === "proforma" && data.echeance;
+  const showTerms = Boolean(data.termsAndConditions);
+  const showGarantie = Boolean(data.garantie);
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -272,10 +291,7 @@ function renderInvoiceHtml(data) {
         <div class="payment-block">
           <div class="section">
             <h3>Informations de paiement</h3>
-            <p>Paiement par virement bancaire</p>
-            <p>Compte : ${escapeHtml(company.paymentBankAccount)}</p>
-            <p style="margin-top:8px;">Paiement par Orange Money</p>
-            <p>${escapeHtml(company.paymentOrangeMoney)}</p>
+            ${paymentInfoHtml(data)}
           </div>
           ${showTerms ? `
           <div class="section">
@@ -286,11 +302,6 @@ function renderInvoiceHtml(data) {
           <div class="section">
             <h3>Garantie</h3>
             <p>${escapeHtml(data.garantie)}</p>
-          </div>` : ""}
-          ${showEcheance ? `
-          <div class="section">
-            <h3>\u00c9ch\u00e9ance</h3>
-            <p>${escapeHtml(data.echeance)}</p>
           </div>` : ""}
         </div>
         <div class="sig-box">
