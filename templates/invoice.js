@@ -18,18 +18,27 @@ function formatMoney(n) {
 const PAGE_WIDTH = 1080;
 const PAGE_HEIGHT = 1350;
 
+function docLabelFor(docType) {
+  if (docType === "facture") return "Facture";
+  if (docType === "proforma") return "Facture Proforma";
+  return "Devis";
+}
+
 /**
  * data = {
- *   docType: "devis" | "facture",
- *   number: "25010001",
+ *   docType: "devis" | "facture" | "proforma",
+ *   number: "0000001-09/26",
  *   date: "20/09/2026",
+ *   echeance: "20/10/2026",            // uniquement pour les proforma
+ *   termsAndConditions: "...",         // saisi par l'utilisateur, devis/proforma seulement
+ *   garantie: "...",                   // saisi par l'utilisateur, devis/proforma seulement
  *   client: { name, address, phone },
  *   items: [{ description, unitPrice, quantity }],
  *   tvaRate: 0
  * }
  */
 function renderInvoiceHtml(data) {
-  const docLabel = data.docType === "facture" ? "Facture" : "Devis";
+  const docLabel = docLabelFor(data.docType);
   const items = data.items || [];
 
   const rows = items
@@ -54,6 +63,13 @@ function renderInvoiceHtml(data) {
   const tvaRate = Number(data.tvaRate) || 0;
   const tvaAmount = Math.round(totalHT * (tvaRate / 100));
   const totalTTC = totalHT + tvaAmount;
+
+  // Termes, garantie et echeance sont desormais saisis par l'utilisateur a
+  // la generation (plus de texte fixe depuis company.js) ; ils ne
+  // s'affichent que si renseignes, et jamais sur une facture.
+  const showTerms = data.docType !== "facture" && data.termsAndConditions;
+  const showGarantie = data.docType !== "facture" && data.garantie;
+  const showEcheance = data.docType === "proforma" && data.echeance;
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -261,10 +277,21 @@ function renderInvoiceHtml(data) {
             <p style="margin-top:8px;">Paiement par Orange Money</p>
             <p>${escapeHtml(company.paymentOrangeMoney)}</p>
           </div>
+          ${showTerms ? `
           <div class="section">
             <h3>Termes &amp; conditions</h3>
-            <p>${escapeHtml(company.termsAndConditions)}</p>
-          </div>
+            <p>${escapeHtml(data.termsAndConditions)}</p>
+          </div>` : ""}
+          ${showGarantie ? `
+          <div class="section">
+            <h3>Garantie</h3>
+            <p>${escapeHtml(data.garantie)}</p>
+          </div>` : ""}
+          ${showEcheance ? `
+          <div class="section">
+            <h3>\u00c9ch\u00e9ance</h3>
+            <p>${escapeHtml(data.echeance)}</p>
+          </div>` : ""}
         </div>
         <div class="sig-box">
           <div class="date-line">Date: ${escapeHtml(data.date || "")}</div>

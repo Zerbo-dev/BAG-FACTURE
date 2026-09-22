@@ -4,5 +4,6 @@ node_modules/
 .vercel
 *.log
 preview/
-
+assets/logo.png
+assets/signature.png
 .vercel

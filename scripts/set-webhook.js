@@ -4,7 +4,6 @@
  * Enregistre l'URL de webhook aupres de Telegram, avec le secret
  * WEBHOOK_SECRET pour verifier que les requetes viennent bien de Telegram.
  * Necessite TELEGRAM_BOT_TOKEN et WEBHOOK_SECRET dans l'environnement
- * (charge-les avec `export $(cat .env | xargs)` ou copie-colle-les avant).
  */
 const url = process.argv[2];
 if (!url) {
