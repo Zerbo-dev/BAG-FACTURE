@@ -1,212 +1,298 @@
-# Bot Telegram — Devis & Factures B.A.G Technology Service
+# B.A.G Invoice Bot
 
-Un bot Telegram qui génère tes devis et factures (dans le design de ton modèle)
-en PDF **et** en image, à partir d'une simple discussion. Tout tourne sur
-Vercel, **entièrement gratuit** : aucune API payante, aucune carte bancaire
-requise. Le bot comprend le texte grâce à des règles écrites à la main
-(pas d'intelligence artificielle externe facturée à l'usage).
+Bot Telegram de **B.A.G Technology Service** permettant de créer des devis, des factures et des factures proforma à partir d'une conversation. Les documents sont générés en **PDF** et en **image PNG**, puis peuvent être archivés dans Redis et dans un canal Telegram.
 
-## Comment ça marche pour l'utilisateur
+Le projet est conçu pour fonctionner localement avec le long polling Telegram ou en production comme fonction serverless sur Vercel.
 
-- **Mode rapide** : un seul message libre, ex.
-  `"Devis pour M. Sawadogo, Kamboinsin, 70245268. Diagnostic 25000, câblage du tableau 55000"`
-  → le bot comprend tout via l'IA et affiche un aperçu.
-- **Mode guidé** : `/devis` ou `/facture` → le bot pose les questions une par une
-  (nom du client, adresse, téléphone, prestations).
-- Dans les deux cas, un **aperçu récapitulatif** est montré avec des boutons
-  *Confirmer*, *Ajouter une prestation*, *Annuler* avant de générer le document final.
-- Une fois confirmé : le bot renvoie l'image PNG puis le PDF, avec un numéro
-  de devis/facture qui s'incrémente automatiquement (Devis n° 0007, 0008...).
+## Fonctionnalités
 
-## Ce dont tu as besoin avant de déployer (tout est gratuit)
+- Création de trois types de documents :
+  - devis ;
+  - facture ;
+  - facture proforma.
+- Deux modes de saisie :
+  - mode guidé avec `/devis`, `/facture` ou `/proforma` ;
+  - mode libre à partir d'un message contenant le client, les prestations et les prix.
+- Aperçu avant génération avec boutons de confirmation, annulation et gestion des prestations.
+- Ajout, modification et suppression de prestations.
+- Gestion des quantités et calcul des totaux HT, TVA et TTC.
+- Sélection de plusieurs modes de paiement pour les factures :
+  - virement bancaire ;
+  - Orange Money ;
+  - espèces.
+- Ajout de conditions générales et d'une garantie.
+- Numérotation automatique par type de document et par année.
+- Génération d'un PDF multipage et d'un aperçu PNG.
+- Archivage optionnel dans un canal Telegram.
+- Conservation des conversations et des documents dans Upstash Redis.
 
-1. **Un token Telegram** — tu l'as déjà (via @BotFather). ✅
-2. **Un compte Vercel** (gratuit, plan Hobby) — https://vercel.com
-3. **Une base Redis gratuite** (Upstash) — créée en 2 clics depuis ton
-   projet Vercel, onglet *Storage*, sans carte bancaire (offre gratuite
-   large pour un usage d'un ou quelques artisans).
+## Exemple d'utilisation
 
-Aucune clé d'API payante n'est nécessaire : la compréhension du texte se
-fait par des règles écrites dans le code (`lib/parseText.js`), pas par un
-service d'IA facturé à l'usage.
+Message libre :
+
+```text
+Devis pour M. Sawadogo, Kamboinsin, 70245268.
+Diagnostic 25000, câblage du tableau électrique 55000 x2
+```
+
+Le bot extrait le type de document, le client, l'adresse, le téléphone, les prestations, les prix et les quantités, puis demande les informations manquantes avant d'afficher un aperçu.
+
+Commandes disponibles :
+
+```text
+/start      Afficher l'aide et les modes de fonctionnement
+/devis      Créer un devis en mode guidé
+/facture    Créer une facture en mode guidé
+/proforma   Créer une facture proforma en mode guidé
+/annuler    Annuler la conversation en cours
+```
+
+## Architecture
+
+```text
+api/
+  webhook.js             Point d'entrée Vercel pour les mises à jour Telegram
+
+dev.js                   Démarrage local du bot en long polling
+
+lib/
+  bot.js                 Commandes Telegram, parcours guidé et génération
+  parseText.js           Extraction locale par expressions régulières
+  state.js               État des conversations, compteurs et archivage Redis
+  render.js              Rendu HTML vers PDF et PNG avec Chromium
+  company.js              Coordonnées, logo, signature et paiement
+
+templates/
+  invoice.js             Modèle HTML/CSS des devis et factures
+
+scripts/
+  preview.js             Génération locale d'un document d'exemple
+  set-webhook.js         Configuration du webhook Telegram
+
+assets/
+  logo.png               Logo du projet
+
+vercel.json              Configuration de la fonction serverless
+package.json             Scripts et dépendances Node.js
+```
+
+### Flux de génération
+
+1. Telegram transmet un message au bot.
+2. `lib/bot.js` démarre ou poursuit une conversation.
+3. `lib/parseText.js` extrait les données d'un message libre ou d'une ligne de prestation.
+4. `lib/state.js` sauvegarde temporairement la conversation dans Upstash Redis.
+5. L'utilisateur vérifie l'aperçu et confirme la génération.
+6. `templates/invoice.js` construit le document HTML/CSS.
+7. `lib/render.js` utilise Chromium headless pour produire le PDF et le PNG.
+8. Le bot renvoie les fichiers dans Telegram et sauvegarde les métadonnées dans Redis.
+
+## Technologies
+
+- Node.js 18 ou supérieur
+- JavaScript CommonJS
+- [Telegraf](https://telegraf.js.org/) pour Telegram
+- [Upstash Redis](https://upstash.com/) pour le stockage
+- [Puppeteer Core](https://pptr.dev/) pour le rendu
+- [Chromium](https://github.com/Sparticuz/chromium) pour la génération PDF/PNG
+- [Vercel](https://vercel.com/) pour le déploiement serverless
 
 ## Installation
 
-### 1. Récupérer le projet
+### Prérequis
 
-Télécharge le dossier `bag-invoice-bot`, puis pousse-le sur un dépôt GitHub
-(privé de préférence, car il contiendra ton logo) :
+- Node.js 18 ou supérieur ;
+- un bot Telegram créé avec [@BotFather](https://t.me/BotFather) ;
+- une base Redis Upstash ;
+- npm.
 
-```bash
-cd bag-invoice-bot
-git init
-git add .
-git commit -m "Bot devis/factures B.A.G"
-gh repo create bag-invoice-bot --private --source=. --push
-# ou crée le repo manuellement sur github.com puis:
-# git remote add origin <url-du-repo>
-# git push -u origin main
-```
-
-### 2. Déployer sur Vercel
-
-- Va sur https://vercel.com/new, importe le dépôt GitHub.
-- Vercel détecte automatiquement que c'est un projet Node avec des
-  fonctions dans `api/`. Laisse les réglages par défaut et clique *Deploy*.
-
-### 3. Ajouter le stockage (Redis gratuit)
-
-- Dans le projet Vercel → onglet **Storage** → **Create Database** →
-  choisis **Upstash** puis **Redis**, offre gratuite (aucune carte requise).
-- Connecte-la à ton projet. Vercel ajoute automatiquement les variables
-  `KV_REST_API_URL` et `KV_REST_API_TOKEN` (utilisées telles quelles par
-  le bot).
-
-### 4. Configurer les variables d'environnement
-
-Dans **Settings → Environment Variables**, ajoute (voir `.env.example` pour
-la liste complète et les valeurs par défaut) :
-
-| Variable | Valeur |
-|---|---|
-| `TELEGRAM_BOT_TOKEN` | le token donné par @BotFather |
-| `WEBHOOK_SECRET` | invente une longue chaîne aléatoire |
-| `CHROMIUM_PACK_URL` | garde la valeur par défaut de `.env.example` |
-| `COMPANY_*` et `PAYMENT_*` | tes infos d'entreprise (déjà pré-remplies avec tes infos actuelles dans `lib/company.js`, à ajuster si besoin) |
-
-Redéploie ensuite le projet pour que les variables soient prises en compte
-(**Deployments → ⋯ → Redeploy**).
-
-### 5. Enregistrer le webhook auprès de Telegram
-
-Une fois déployé, tu as une URL du type `https://bag-invoice-bot.vercel.app`.
-En local, avec Node 18+ :
-
-```bash
-export TELEGRAM_BOT_TOKEN=xxxxx
-export WEBHOOK_SECRET=xxxxx   # la même valeur que sur Vercel
-node scripts/set-webhook.js https://bag-invoice-bot.vercel.app
-```
-
-Tu dois voir `"ok": true` dans la réponse. Ton bot est en ligne 🎉
-
-Teste-le sur Telegram avec `/start`.
-
-## Tester en local
-
-Trois façons, de la plus rapide à la plus complète.
-
-### 1. Vérifier juste le rendu du devis (le plus rapide)
-
-Sans toucher à Telegram : génère un devis d'exemple en HTML/PDF/PNG dans un
-dossier `preview/`, pratique pour ajuster le gabarit (`templates/invoice.js`)
-ou vérifier le logo.
+Installer les dépendances :
 
 ```bash
 npm install
-npm run preview
 ```
 
-Ouvre ensuite `preview/devis.html` dans ton navigateur (aperçu instantané,
-sans Chromium), ou `preview/devis.pdf` / `preview/devis.png` (rendu final,
-via Chromium — voir la remarque OS ci-dessous).
+## Variables d'environnement
 
-### 2. Discuter avec le bot en local (recommandé)
+Créer un fichier `.env` en développement local ou configurer ces variables dans Vercel :
 
-Le bot tourne directement sur ta machine et interroge Telegram lui-même
-(long polling), donc **pas besoin de tunnel ni de déployer** :
+```dotenv
+TELEGRAM_BOT_TOKEN=token_fourni_par_botfather
+WEBHOOK_SECRET=une_chaine_secrete_longue
+
+KV_REST_API_URL=https://votre-instance.upstash.io
+KV_REST_API_TOKEN=votre_token_upstash
+
+# Optionnel selon la configuration Upstash
+UPSTASH_REDIS_REST_URL=https://votre-instance.upstash.io
+UPSTASH_REDIS_REST_TOKEN=votre_token_upstash
+
+# URL d'un package Chromium compatible avec l'environnement cible
+CHROMIUM_PACK_URL=
+
+# Informations de l'entreprise
+COMPANY_NAME=B.A.G TECHNOLOGY SERVICE
+COMPANY_ADDRESS=Wayalghin, Ouaga, BF
+COMPANY_PHONE=+226 76 46 81 88
+COMPANY_EMAIL=servicesglobaltechnology44@gmail.com
+COMPANY_RCCM=BF-OUA-01-2026-A10-01509
+COMPANY_IFU=00299226F
+COMPANY_SOCIAL_SECURITY=1492247B
+
+# Informations de paiement
+PAYMENT_BANK_ACCOUNT=4724 2300 3797 0761
+PAYMENT_ORANGE_MONEY=+226 76-46-81-88
+TERMS_AND_CONDITIONS=Ce devis est valable 1 mois a compter de sa date d'emission
+
+# Optionnel : canal Telegram d'archivage
+ARCHIVE_CHANNEL_ID=
+```
+
+Ne jamais versionner le fichier `.env` ni publier les tokens Telegram, Redis ou webhook.
+
+## Lancement local
+
+Le mode local utilise le **long polling** Telegram :
 
 ```bash
-cp .env.example .env
-# remplis au moins TELEGRAM_BOT_TOKEN, KV_REST_API_URL, KV_REST_API_TOKEN
-# (crée une base Redis gratuite sur https://console.upstash.com si tu n'as
-# pas encore connecté Upstash à Vercel)
-
-npm install
 npm run dev
 ```
 
-Puis va discuter avec ton bot sur Telegram normalement (`/start`, `/devis`,
-etc.) — les messages arrivent directement sur ta machine. `Ctrl+C` pour
-arrêter. Tant que ce script tourne, ne configure **pas** de webhook en même
-temps (les deux modes sont incompatibles) : si tu avais déjà fait
-`node scripts/set-webhook.js`, exécute d'abord
-`node -e "require('dotenv').config(); fetch('https://api.telegram.org/bot'+process.env.TELEGRAM_BOT_TOKEN+'/deleteWebhook').then(r=>r.json()).then(console.log)"`
-pour repasser en mode polling.
+Le bot doit disposer au minimum de `TELEGRAM_BOT_TOKEN`, `KV_REST_API_URL` et `KV_REST_API_TOKEN`.
 
-### 3. Simuler exactement l'environnement Vercel (webhook + tunnel)
-
-Pour tester le comportement webhook tel qu'il sera en production :
+Le long polling et le webhook ne doivent pas être actifs en même temps. Pour supprimer un webhook existant :
 
 ```bash
-npm install -g vercel   # une fois
-vercel dev              # démarre les fonctions sur http://localhost:3000
+node -e "require('dotenv').config(); fetch('https://api.telegram.org/bot'+process.env.TELEGRAM_BOT_TOKEN+'/deleteWebhook').then(r=>r.json()).then(console.log)"
 ```
 
-Dans un autre terminal, ouvre un tunnel public gratuit (ex.
-[ngrok](https://ngrok.com)) :
+## Prévisualisation d'un document
+
+Pour générer un exemple sans passer par Telegram :
 
 ```bash
-ngrok http 3000
+npm run preview
 ```
 
-Puis pointe Telegram vers l'URL ngrok obtenue :
+Les fichiers sont créés dans `preview/` :
+
+```text
+preview/devis.html
+preview/devis.pdf
+preview/devis.png
+```
+
+Le HTML peut être ouvert directement dans un navigateur. La génération PDF/PNG utilise Chromium et fonctionne idéalement sur Linux ou dans l'environnement Vercel. Sur macOS ou Windows, le binaire Chromium peut nécessiter WSL, Docker ou un déploiement Vercel.
+
+## Déploiement sur Vercel
+
+1. Importer le dépôt dans Vercel.
+2. Créer une base Upstash Redis et la connecter au projet.
+3. Ajouter les variables d'environnement dans les paramètres Vercel.
+4. Déployer le projet.
+5. Configurer le webhook Telegram.
+
+Le script suivant enregistre automatiquement `/api/webhook` :
 
 ```bash
 export TELEGRAM_BOT_TOKEN=xxxxx
 export WEBHOOK_SECRET=xxxxx
-node scripts/set-webhook.js https://xxxx.ngrok-free.app
+node scripts/set-webhook.js https://votre-projet.vercel.app
 ```
 
-N'oublie pas de repointer le webhook vers ton URL Vercel réelle une fois le
-test terminé (`node scripts/set-webhook.js https://ton-projet.vercel.app`).
+Le webhook final sera :
 
-### Remarque sur le rendu PDF/PNG en local (macOS/Windows)
+```text
+https://votre-projet.vercel.app/api/webhook
+```
 
-`@sparticuz/chromium-min` télécharge un Chromium optimisé pour
-l'environnement Linux de Vercel. Sur Linux, ça fonctionne aussi en local.
-Sur macOS/Windows, le binaire peut refuser de s'exécuter (erreur du type
-"exec format error"). Dans ce cas : la conversation avec le bot fonctionne
-quand même (`npm run dev`), seule la génération finale du PDF/PNG échouera
-en local — teste-la une fois déployée sur Vercel (gratuit, voir plus haut),
-ou lance le projet dans un conteneur/VM Linux (WSL sur Windows, Docker) si
-tu veux absolument tout tester en local.
+La fonction serverless est configurée dans `vercel.json` avec :
 
-## Personnaliser le modèle
+- une durée maximale de 60 secondes ;
+- 1024 Mo de mémoire.
 
+## Analyse des messages
 
+L'analyse est locale et ne dépend pas d'une API d'intelligence artificielle payante. Le parser reconnaît notamment :
 
-- **Logo / infos entreprise** : `lib/company.js` (ou via variables
-  d'environnement `COMPANY_*`).
-- **Mise en page du devis/facture** : `templates/invoice.js` — c'est du
-  HTML/CSS classique, facile à ajuster (couleurs, polices, disposition).
-- **Numérotation** : séparée entre devis et factures, stockée dans Vercel KV.
-  Pour repartir de zéro, supprime les clés `counter:devis` / `counter:facture`
-  dans le tableau de bord Vercel KV.
+- les types `devis`, `facture` et `proforma` ;
+- les clients introduits par `pour` ou `client` ;
+- les téléphones burkinabè à huit chiffres, avec ou sans `+226` ;
+- les prestations séparées par des virgules, points-virgules ou retours à la ligne ;
+- les prix en francs CFA ;
+- les quantités avec `x2`, `*2` ou dans le format `Description (75000F).5` ;
+- la TVA avec une syntaxe comme `TVA 18%`.
 
-## Limites de l'analyseur de texte gratuit
+Pour obtenir le meilleur résultat, utiliser un format explicite :
 
-Sans IA, la compréhension du message repose sur des motifs simples :
-- Le nom du client doit suivre le mot **"pour"** ou **"client"**
-  (ex. `"Devis pour M. Sawadogo, ..."`).
-- Le numéro de téléphone (8 chiffres, avec ou sans `+226`) marque la fin
-  des infos client.
-- Chaque prestation doit être séparée par une **virgule**, avec le prix à
-  la fin (ex. `"Câblage du tableau électrique 55000"`), et une quantité
-  optionnelle en `x2`.
-- `"TVA 18%"` quelque part dans le message règle le taux de TVA.
+```text
+Facture pour Awa Traoré, Ouagadougou, 78123456.
+Installation 40000, maintenance 15000 x2, TVA 18%
+```
 
-Si une phrase est mal comprise, l'aperçu avant génération permet de le
-repérer avant d'envoyer le document final ; sinon, autant utiliser le
-**mode guidé** (`/devis`, `/facture`) qui pose les questions une par une
-et est beaucoup plus fiable.
+Si le message est ambigu, le mode guidé est recommandé.
 
-## Limites à connaître
+## Personnalisation du document
 
-- La génération PDF/PNG utilise un vrai navigateur headless (Chromium) —
-  cela prend quelques secondes. `vercel.json` autorise jusqu'à 60s
-  d'exécution ; sur le plan **Hobby** gratuit, Vercel peut plafonner cette
-  durée selon les évolutions de leurs limites : si tu vois des erreurs de
-  timeout, passe au plan Pro ou réduis la complexité du template.
-- Les données (numéro de devis en cours, conversations en cours) sont
-  stockées dans Vercel KV — ne supprime pas cette base une fois en usage.
+Les principales personnalisations se trouvent dans :
+
+- `lib/company.js` pour les coordonnées et informations de paiement ;
+- `templates/invoice.js` pour le HTML, le CSS, les couleurs, les dimensions et la pagination ;
+- `assets/logo.png` pour le logo source.
+
+Le logo et la signature utilisés par le modèle sont actuellement intégrés sous forme de données base64 dans `lib/company.js`.
+
+## Stockage Redis
+
+Les conversations temporaires utilisent des clés de la forme :
+
+```text
+conv:<chatId>
+```
+
+Elles expirent après six heures.
+
+Les compteurs de documents utilisent des clés de la forme :
+
+```text
+counter:<type>:<année>
+```
+
+Les documents archivés utilisent notamment :
+
+```text
+invoice:<numéro>
+invoices:index
+```
+
+Les identifiants de fichiers Telegram sont conservés afin de pouvoir réutiliser les fichiers archivés sans régénérer le document.
+
+## Scripts npm
+
+```bash
+npm run dev       # démarrer le bot localement avec long polling
+npm run preview   # générer un exemple HTML/PDF/PNG
+npm run set-webhook -- https://votre-projet.vercel.app
+```
+
+## Limites connues
+
+- L'analyseur local est prévisible et gratuite, mais moins souple qu'un modèle de langage.
+- Les prestations doivent idéalement contenir un prix clairement identifiable.
+- La génération PDF/PNG lance Chromium et peut prendre plusieurs secondes.
+- Le PNG envoyé comme aperçu représente uniquement la première page ; le PDF contient toutes les pages.
+- La durée maximale d'exécution Vercel est limitée à 60 secondes par `vercel.json`.
+- Aucune suite de tests automatisés n'est actuellement définie dans `package.json`.
+- Le fichier `lib/llmExtract.js` est un ancien extracteur Anthropic non utilisé par le flux actuel ; le bot utilise `lib/parseText.js`.
+
+## Sécurité
+
+- Garder le dépôt privé si le logo, la signature ou les informations commerciales ne doivent pas être publics.
+- Ne jamais committer `.env` ou des secrets.
+- Activer `WEBHOOK_SECRET` en production.
+- Limiter les permissions du bot dans le canal d'archivage.
+- Protéger l'accès à la base Upstash Redis.
+
+## Licence
+
+Aucune licence open source n'est actuellement déclarée dans le dépôt. Tous droits réservés à B.A.G Technology Service, sauf indication contraire.
