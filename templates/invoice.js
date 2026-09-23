@@ -18,6 +18,13 @@ function formatMoney(n) {
 const PAGE_WIDTH = 1080;
 const PAGE_HEIGHT = 1350;
 
+// Capacite d'items par type de page. Volontairement prudente (marge de
+// securite) puisque le depassement est silencieusement coupe (overflow
+// hidden) plutot que source d'un bug visible.
+const FIRST_PAGE_ITEM_LIMIT = 6; // page 1 : en-tete complet + infos client + table
+const LAST_ONLY_ITEM_LIMIT = 8; // derniere page si elle n'est pas la page 1 : bandeau reduit + table + totaux/signature
+const MIDDLE_PAGE_ITEM_LIMIT = 14; // page de continuation pure : bandeau reduit + table seulement
+
 function docLabelFor(docType) {
   if (docType === "facture") return "Facture";
   if (docType === "proforma") return "Facture Proforma";
@@ -25,26 +32,188 @@ function docLabelFor(docType) {
 }
 
 /**
+ * Repartit les prestations sur autant de pages que necessaire.
+ * - 1 seule page si tout tient dans FIRST_PAGE_ITEM_LIMIT (cas courant).
+ * - Sinon : page 1 (en-tete complet), pages de continuation (bandeau reduit),
+ *   derniere page (bandeau reduit + totaux/paiement/signature).
+ */
+function paginateItems(items) {
+  if (items.length <= FIRST_PAGE_ITEM_LIMIT) {
+    return [{ items, isFirst: true, isLast: true }];
+  }
+
+  const pages = [];
+  const remaining = items.slice();
+
+  const page1Items = remaining.splice(0, FIRST_PAGE_ITEM_LIMIT);
+  pages.push({ items: page1Items, isFirst: true, isLast: false });
+
+  while (remaining.length > LAST_ONLY_ITEM_LIMIT) {
+    const chunk = remaining.splice(0, MIDDLE_PAGE_ITEM_LIMIT);
+    pages.push({ items: chunk, isFirst: false, isLast: false });
+  }
+
+  if (remaining.length === 0) {
+    pages[pages.length - 1].isLast = true;
+  } else {
+    pages.push({ items: remaining, isFirst: false, isLast: true });
+  }
+
+  return pages;
+}
+
+/**
  * Sur une facture, le mode de paiement est choisi par l'utilisateur a la
  * generation, donc on n'affiche que ce mode-la. Sur devis/proforma (rien
  * n'est encore decide), on affiche les deux options possibles.
  */
+/**
+ * Sur une facture, le ou les modes de paiement sont choisis par
+ * l'utilisateur a la generation (plusieurs possibles), donc on
+ * n'affiche que ceux-la. Sur devis/proforma (rien n'est encore
+ * decide), on affiche les deux options possibles par defaut.
+ */
 function paymentInfoHtml(data) {
-  if (data.docType === "facture" && data.paymentMode) {
-    if (data.paymentMode === "Virement bancaire") {
-      return `<p>Paiement par virement bancaire</p>
-              <p>Compte : ${escapeHtml(company.paymentBankAccount)}</p>`;
-    }
-    if (data.paymentMode === "Orange Money") {
-      return `<p>Paiement par Orange Money</p>
-              <p>${escapeHtml(company.paymentOrangeMoney)}</p>`;
-    }
-    return `<p>Paiement en esp\u00e8ces</p>`;
+  const MODE_BLOCKS = {
+    "Virement bancaire": () => `
+      <p>Paiement par virement bancaire</p>
+      <p>Compte : ${escapeHtml(company.paymentBankAccount)}</p>`,
+    "Orange Money": () => `
+      <p>Paiement par Orange Money</p>
+      <p>${escapeHtml(company.paymentOrangeMoney)}</p>`,
+    "Espèces": () => `<p>Paiement en esp\u00e8ces</p>`,
+  };
+
+  if (data.docType === "facture" && Array.isArray(data.paymentModes) && data.paymentModes.length) {
+    return data.paymentModes
+      .map((mode, i) => {
+        const block = MODE_BLOCKS[mode];
+        if (!block) return "";
+        const spacer = i > 0 ? '<div style="margin-top:8px;"></div>' : "";
+        return spacer + block();
+      })
+      .join("");
   }
-  return `<p>Paiement par virement bancaire</p>
-          <p>Compte : ${escapeHtml(company.paymentBankAccount)}</p>
-          <p style="margin-top:8px;">Paiement par Orange Money</p>
-          <p>${escapeHtml(company.paymentOrangeMoney)}</p>`;
+
+  return `${MODE_BLOCKS["Virement bancaire"]()}
+          <div style="margin-top:8px;"></div>
+          ${MODE_BLOCKS["Orange Money"]()}`;
+}
+
+function itemRowsHtml(items) {
+  return items
+    .map((it) => {
+      const qty = it.quantity && Number(it.quantity) > 0 ? Number(it.quantity) : 1;
+      const total = Number(it.unitPrice) * qty;
+      const qtyDisplay = it.quantity && Number(it.quantity) > 0 ? qty : "---";
+      return `
+        <tr>
+          <td class="desc">${escapeHtml(it.description)}</td>
+          <td class="num">${formatMoney(it.unitPrice)}</td>
+          <td class="num">${qtyDisplay}</td>
+          <td class="num">${formatMoney(total)}</td>
+        </tr>`;
+    })
+    .join("");
+}
+
+function tableHtml(pageItems) {
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <td>Description</td>
+            <td class="num">Prix unitaire</td>
+            <td class="num">Quantit\u00e9</td>
+            <td class="num">Total HT</td>
+          </tr>
+        </thead>
+        <tbody>
+          ${itemRowsHtml(pageItems)}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function fullHeaderHtml(docLabel, data) {
+  return `
+    <div class="header">
+      <svg class="wave" viewBox="0 0 1080 90" preserveAspectRatio="none" height="90">
+        <path d="M0,40 C 250,90 750,0 1080,55 L1080,90 L0,90 Z" fill="#c81e3b"/>
+        <path d="M0,55 C 250,100 750,15 1080,68 L1080,90 L0,90 Z" fill="#ffffff"/>
+      </svg>
+      <div class="doc-title">${docLabel} n\u00b0 ${escapeHtml(data.number)}</div>
+      <img class="logo" src="${company.logoDataUri}" />
+    </div>
+    <div class="info-row">
+      <div class="client-block">
+        <div class="client-label">Client: <span>${escapeHtml(data.client?.name || "")}</span></div>
+        <p>${escapeHtml(data.client?.address || "")}</p>
+        <p>${escapeHtml(data.client?.phone || "")}</p>
+      </div>
+      <div class="company-block">
+        <p>${escapeHtml(company.address)}</p>
+        <p>${escapeHtml(company.phone)}</p>
+        <p>${escapeHtml(company.email)}</p>
+      </div>
+    </div>`;
+}
+
+function continuationHeaderHtml(docLabel, data) {
+  return `
+    <div class="header-continuation">
+      ${docLabel} n\u00b0 ${escapeHtml(data.number)} (suite)
+    </div>`;
+}
+
+function totalsAndSummaryHtml(data, totalHT, tvaRate, tvaAmount, totalTTC) {
+  const showTerms = Boolean(data.termsAndConditions);
+  const showGarantie = Boolean(data.garantie);
+
+  return `
+    <div class="summary">
+      <table>
+        <tr><td>total</td><td>${formatMoney(totalHT)}</td></tr>
+        <tr><td>TVA (${tvaRate}%)</td><td>${formatMoney(tvaAmount)}</td></tr>
+      </table>
+    </div>
+
+    <div class="total-bar">
+      <span>Total</span>
+      <span>${formatMoney(totalTTC)}</span>
+    </div>
+
+    <div class="bottom-row">
+      <div class="payment-block">
+        <div class="section">
+          <h3>Informations de paiement</h3>
+          ${paymentInfoHtml(data)}
+        </div>
+        ${showTerms ? `
+        <div class="section">
+          <h3>Termes &amp; conditions</h3>
+          <p>${escapeHtml(data.termsAndConditions)}</p>
+        </div>` : ""}
+        ${showGarantie ? `
+        <div class="section">
+          <h3>Garantie</h3>
+          <p>${escapeHtml(data.garantie)}</p>
+        </div>` : ""}
+      </div>
+      <div class="sig-box">
+        <div class="date-line">Date: ${escapeHtml(data.date || "")}</div>
+        <div>Signature:</div>
+        <img class="signature-img" src="${company.signatureDataUri}" />
+      </div>
+    </div>`;
+}
+
+function footerHtml() {
+  return `
+    <div class="footer">
+      RCCM : ${escapeHtml(company.rccm)} | IFU : ${escapeHtml(company.ifu)} | N\u00b0 S\u00e9curit\u00e9 sociale : ${escapeHtml(company.socialSecurity)}
+    </div>`;
 }
 
 /**
@@ -52,7 +221,7 @@ function paymentInfoHtml(data) {
  *   docType: "devis" | "facture" | "proforma",
  *   number: "0000001-09/26",
  *   date: "20/09/2026",
- *   paymentMode: "Virement bancaire" | "Orange Money" | "Espèces", // facture seulement
+ *   paymentMode: "Virement bancaire" | "Orange Money" | "Espèces", // facture seulement, un ou plusieurs
  *   termsAndConditions: "...",   // saisi par l'utilisateur, tous types
  *   garantie: "...",             // saisi par l'utilisateur, tous types
  *   client: { name, address, phone },
@@ -64,21 +233,6 @@ function renderInvoiceHtml(data) {
   const docLabel = docLabelFor(data.docType);
   const items = data.items || [];
 
-  const rows = items
-    .map((it) => {
-      const qty = it.quantity && Number(it.quantity) > 0 ? Number(it.quantity) : 1;
-      const total = Number(it.unitPrice) * qty;
-      const qtyDisplay = it.quantity && Number(it.quantity) > 0 ? qty : "-";
-      return `
-        <tr>
-          <td class="desc">${escapeHtml(it.description)}</td>
-          <td class="num">${formatMoney(it.unitPrice)}</td>
-          <td class="num">${qtyDisplay}</td>
-          <td class="num">${formatMoney(total)}</td>
-        </tr>`;
-    })
-    .join("");
-
   const totalHT = items.reduce((sum, it) => {
     const qty = it.quantity && Number(it.quantity) > 0 ? Number(it.quantity) : 1;
     return sum + Number(it.unitPrice) * qty;
@@ -87,8 +241,32 @@ function renderInvoiceHtml(data) {
   const tvaAmount = Math.round(totalHT * (tvaRate / 100));
   const totalTTC = totalHT + tvaAmount;
 
-  const showTerms = Boolean(data.termsAndConditions);
-  const showGarantie = Boolean(data.garantie);
+  const pages = paginateItems(items);
+
+  const pagesHtml = pages
+    .map((page, idx) => {
+      const isLastPage = idx === pages.length - 1;
+      const header = page.isFirst
+        ? fullHeaderHtml(docLabel, data)
+        : continuationHeaderHtml(docLabel, data);
+      const table = tableHtml(page.items);
+      const summary = page.isLast
+        ? totalsAndSummaryHtml(data, totalHT, tvaRate, tvaAmount, totalTTC)
+        : "";
+      const footer = page.isLast ? footerHtml() : "";
+      const pageBreakClass = isLastPage ? "" : " page-break";
+
+      return `
+      <div class="page${pageBreakClass}">
+        <div class="page-content">
+          ${header}
+          ${table}
+          ${summary}
+        </div>
+        ${footer}
+      </div>`;
+    })
+    .join("");
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -103,8 +281,8 @@ function renderInvoiceHtml(data) {
     background: #ffffff;
   }
 
-  /* Cadre de taille FIXE : le footer reste toujours ancre en bas,
-     quel que soit le volume de contenu au-dessus (dans la limite raisonnable). */
+  /* Une page physique = un bloc de hauteur FIXE. La derniere n'a pas de
+     saut de page force apres elle (evite une page blanche finale). */
   .page {
     width: ${PAGE_WIDTH}px;
     height: ${PAGE_HEIGHT}px;
@@ -112,6 +290,7 @@ function renderInvoiceHtml(data) {
     display: flex;
     flex-direction: column;
   }
+  .page-break { page-break-after: always; }
   .page-content { flex: 1 0 auto; }
   .footer { flex: 0 0 auto; }
 
@@ -145,6 +324,17 @@ function renderInvoiceHtml(data) {
     z-index: 3;
     box-shadow: 0 6px 18px rgba(0,0,0,0.35);
   }
+
+  /* Bandeau reduit pour les pages 2+ : pas de logo, pas de vague,
+     juste le rappel du numero de document. */
+  .header-continuation {
+    background: #2a2f66;
+    color: #ffffff;
+    font-size: 20px;
+    font-weight: 700;
+    padding: 22px 56px;
+  }
+
   .info-row {
     display: flex;
     justify-content: space-between;
@@ -235,87 +425,7 @@ function renderInvoiceHtml(data) {
 </style>
 </head>
 <body>
-  <div class="page">
-    <div class="page-content">
-      <div class="header">
-        <svg class="wave" viewBox="0 0 1080 90" preserveAspectRatio="none" height="90">
-          <path d="M0,40 C 250,90 750,0 1080,55 L1080,90 L0,90 Z" fill="#c81e3b"/>
-          <path d="M0,55 C 250,100 750,15 1080,68 L1080,90 L0,90 Z" fill="#ffffff"/>
-        </svg>
-        <div class="doc-title">${docLabel} n\u00b0 ${escapeHtml(data.number)}</div>
-        <img class="logo" src="${company.logoDataUri}" />
-      </div>
-
-      <div class="info-row">
-        <div class="client-block">
-          <div class="client-label">Client: <span>${escapeHtml(data.client?.name || "")}</span></div>
-          <p>${escapeHtml(data.client?.address || "")}</p>
-          <p>${escapeHtml(data.client?.phone || "")}</p>
-        </div>
-        <div class="company-block">
-          <p>${escapeHtml(company.address)}</p>
-          <p>${escapeHtml(company.phone)}</p>
-          <p>${escapeHtml(company.email)}</p>
-        </div>
-      </div>
-
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <td>Description</td>
-              <td class="num">Prix unitaire</td>
-              <td class="num">Quantit\u00e9</td>
-              <td class="num">Total HT</td>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows}
-          </tbody>
-        </table>
-      </div>
-
-      <div class="summary">
-        <table>
-          <tr><td>total</td><td>${formatMoney(totalHT)}</td></tr>
-          <tr><td>TVA (${tvaRate}%)</td><td>${formatMoney(tvaAmount)}</td></tr>
-        </table>
-      </div>
-
-      <div class="total-bar">
-        <span>Total</span>
-        <span>${formatMoney(totalTTC)}</span>
-      </div>
-
-      <div class="bottom-row">
-        <div class="payment-block">
-          <div class="section">
-            <h3>Informations de paiement</h3>
-            ${paymentInfoHtml(data)}
-          </div>
-          ${showTerms ? `
-          <div class="section">
-            <h3>Termes &amp; conditions</h3>
-            <p>${escapeHtml(data.termsAndConditions)}</p>
-          </div>` : ""}
-          ${showGarantie ? `
-          <div class="section">
-            <h3>Garantie</h3>
-            <p>${escapeHtml(data.garantie)}</p>
-          </div>` : ""}
-        </div>
-        <div class="sig-box">
-          <div class="date-line">Date: ${escapeHtml(data.date || "")}</div>
-          <div>Signature:</div>
-          <img class="signature-img" src="${company.signatureDataUri}" />
-        </div>
-      </div>
-    </div>
-
-    <div class="footer">
-      RCCM : ${escapeHtml(company.rccm)} | IFU : ${escapeHtml(company.ifu)} | N\u00b0 S\u00e9curit\u00e9 sociale : ${escapeHtml(company.socialSecurity)}
-    </div>
-  </div>
+  ${pagesHtml}
 </body>
 </html>`;
 }
