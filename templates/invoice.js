@@ -18,12 +18,15 @@ function formatMoney(n) {
 const PAGE_WIDTH = 1080;
 const PAGE_HEIGHT = 1350;
 
-// Capacite d'items par type de page. Volontairement prudente (marge de
-// securite) puisque le depassement est silencieusement coupe (overflow
-// hidden) plutot que source d'un bug visible.
-const FIRST_PAGE_ITEM_LIMIT = 6; // page 1 : en-tete complet + infos client + table
-const LAST_ONLY_ITEM_LIMIT = 8; // derniere page si elle n'est pas la page 1 : bandeau reduit + table + totaux/signature
-const MIDDLE_PAGE_ITEM_LIMIT = 14; // page de continuation pure : bandeau reduit + table seulement
+// Capacites d'items par type de page, recalculees a partir des dimensions
+// CSS reelles (paddings, tailles de police, hauteur de ligne ~46px/ligne),
+// avec le footer desormais present sur CHAQUE page. Gardees volontairement
+// avec un peu de marge de securite (le depassement est silencieusement
+// coupe par overflow:hidden), a affiner apres test reel si besoin.
+const SINGLE_PAGE_ITEM_LIMIT = 9; // tout tient sur 1 page (en-tete + total + paiement + signature + footer)
+const FIRST_PAGE_ITEM_LIMIT = 12; // page 1 quand pagination necessaire (en-tete + table + footer, pas de total)
+const MIDDLE_PAGE_ITEM_LIMIT = 18; // page de continuation pure (bandeau reduit + table + footer)
+const LAST_ONLY_ITEM_LIMIT = 10; // derniere page quand elle n'est pas la page 1 (bandeau reduit + table + total + footer)
 
 function docLabelFor(docType) {
   if (docType === "facture") return "Facture";
@@ -33,12 +36,13 @@ function docLabelFor(docType) {
 
 /**
  * Repartit les prestations sur autant de pages que necessaire.
- * - 1 seule page si tout tient dans FIRST_PAGE_ITEM_LIMIT (cas courant).
- * - Sinon : page 1 (en-tete complet), pages de continuation (bandeau reduit),
+ * - 1 seule page si tout tient dans SINGLE_PAGE_ITEM_LIMIT (cas courant).
+ * - Sinon : page 1 (en-tete complet, FIRST_PAGE_ITEM_LIMIT items), pages de
+ *   continuation (bandeau reduit, MIDDLE_PAGE_ITEM_LIMIT items chacune),
  *   derniere page (bandeau reduit + totaux/paiement/signature).
  */
 function paginateItems(items) {
-  if (items.length <= FIRST_PAGE_ITEM_LIMIT) {
+  if (items.length <= SINGLE_PAGE_ITEM_LIMIT) {
     return [{ items, isFirst: true, isLast: true }];
   }
 
@@ -62,11 +66,6 @@ function paginateItems(items) {
   return pages;
 }
 
-/**
- * Sur une facture, le mode de paiement est choisi par l'utilisateur a la
- * generation, donc on n'affiche que ce mode-la. Sur devis/proforma (rien
- * n'est encore decide), on affiche les deux options possibles.
- */
 /**
  * Sur une facture, le ou les modes de paiement sont choisis par
  * l'utilisateur a la generation (plusieurs possibles), donc on
@@ -105,7 +104,7 @@ function itemRowsHtml(items) {
     .map((it) => {
       const qty = it.quantity && Number(it.quantity) > 0 ? Number(it.quantity) : 1;
       const total = Number(it.unitPrice) * qty;
-      const qtyDisplay = it.quantity && Number(it.quantity) > 0 ? qty : "---";
+      const qtyDisplay = it.quantity && Number(it.quantity) > 0 ? qty : "-";
       return `
         <tr>
           <td class="desc">${escapeHtml(it.description)}</td>
@@ -160,10 +159,14 @@ function fullHeaderHtml(docLabel, data) {
     </div>`;
 }
 
+/**
+ * Bandeau reduit pour les pages 2+. Rappelle juste le numero de document,
+ * SANS mention "(suite)".
+ */
 function continuationHeaderHtml(docLabel, data) {
   return `
     <div class="header-continuation">
-      ${docLabel} n\u00b0 ${escapeHtml(data.number)} (suite)
+      ${docLabel} n\u00b0 ${escapeHtml(data.number)}
     </div>`;
 }
 
@@ -209,6 +212,10 @@ function totalsAndSummaryHtml(data, totalHT, tvaRate, tvaAmount, totalTTC) {
     </div>`;
 }
 
+/**
+ * Pied de page : desormais affiche sur CHAQUE page (avant, seulement la
+ * derniere page l'avait).
+ */
 function footerHtml() {
   return `
     <div class="footer">
@@ -221,7 +228,7 @@ function footerHtml() {
  *   docType: "devis" | "facture" | "proforma",
  *   number: "0000001-09/26",
  *   date: "20/09/2026",
- *   paymentMode: "Virement bancaire" | "Orange Money" | "Espèces", // facture seulement, un ou plusieurs
+ *   paymentModes: ["Virement bancaire", "Orange Money"], // facture seulement, un ou plusieurs
  *   termsAndConditions: "...",   // saisi par l'utilisateur, tous types
  *   garantie: "...",             // saisi par l'utilisateur, tous types
  *   client: { name, address, phone },
@@ -253,7 +260,6 @@ function renderInvoiceHtml(data) {
       const summary = page.isLast
         ? totalsAndSummaryHtml(data, totalHT, tvaRate, tvaAmount, totalTTC)
         : "";
-      const footer = page.isLast ? footerHtml() : "";
       const pageBreakClass = isLastPage ? "" : " page-break";
 
       return `
@@ -263,7 +269,7 @@ function renderInvoiceHtml(data) {
           ${table}
           ${summary}
         </div>
-        ${footer}
+        ${footerHtml()}
       </div>`;
     })
     .join("");
@@ -326,7 +332,7 @@ function renderInvoiceHtml(data) {
   }
 
   /* Bandeau reduit pour les pages 2+ : pas de logo, pas de vague,
-     juste le rappel du numero de document. */
+     juste le rappel du numero de document (sans mention "suite"). */
   .header-continuation {
     background: #2a2f66;
     color: #ffffff;
